@@ -1,0 +1,450 @@
+{
+  "info": {
+    "name": "Lexora Backend",
+    "_postman_id": "lexora-backend-collection",
+    "description": "All endpoints for Lexora vocabulary learning API. Auth uses httpOnly cookie (lx_session) — after login/register the cookie is set automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "cardId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/register",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"e6a8189b-e54f-4c86-8bd0-ff57e04c26b3\",\n  \"name\": \"Test User\",\n  \"email\": \"test@example.com\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"e6a8189b-e54f-4c86-8bd0-ff57e04c26b3\",\n  \"name\": \"Test User\",\n  \"email\": \"test@example.com\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/logout"
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/me"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"e6a8189b-e54f-4c86-8bd0-ff57e04c26b3\",\n  \"name\": \"Test User\",\n  \"email\": \"test@example.com\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Google OAuth",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/google"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cards",
+      "item": [
+        {
+          "name": "List All Cards",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/cards"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "[\n  {\n    \"id\": \"0c51d008-ae19-427b-92ce-26c135b3dab7\",\n    \"userId\": \"e6a8189b-e54f-4c86-8bd0-ff57e04c26b3\",\n    \"word\": \"resembles\",\n    \"pos\": \"verb\",\n    \"pron\": \"/rɪˈzɛmb(ə)lz/\",\n    \"explanation\": \"Third-person singular present tense of resemble.\",\n    \"example\": [\n      {\n        \"id\": \"c6fc2d70-5aa4-4402-a0e7-74bd7501843d\",\n        \"sentence\": \"Everyone says she resembles her mother, especially around the eyes and smile.\",\n        \"createdAt\": \"2026-06-06T05:28:44.818Z\"\n      }\n    ],\n    \"mastery\": \"learning\",\n    \"streak\": 0,\n    \"addedAt\": \"2026-06-06T02:28:44.810Z\",\n    \"updatedAt\": \"2026-06-06T02:28:44.810Z\",\n    \"progress\": null\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Create Card",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/cards",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"word\": \"implication\",\n  \"pos\": \"noun\",\n  \"pron\": \"ˌɪmplɪˈkeɪʃən\",\n  \"explanation\": \"A conclusion that can be drawn from something although it is not explicitly stated.\",\n  \"example\": \"The implication of his silence was that he disagreed.\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"c53f6fb2-e37c-4358-9191-22d702e36683\",\n  \"userId\": \"e6a8189b-e54f-4c86-8bd0-ff57e04c26b3\",\n  \"word\": \"implication\",\n  \"pos\": \"noun\",\n  \"pron\": \"ˌɪmplɪˈkeɪʃən\",\n  \"explanation\": \"A conclusion that can be drawn from something although it is not explicitly stated.\",\n  \"example\": [],\n  \"mastery\": \"learning\",\n  \"streak\": 0,\n  \"addedAt\": \"2026-06-06T10:43:46.205Z\",\n  \"updatedAt\": \"2026-06-06T10:43:46.205Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Autofill",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/cards/autofill?word=implication",
+              "host": ["{{baseUrl}}"],
+              "path": ["cards", "autofill"],
+              "query": [{ "key": "word", "value": "implication" }]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"word\": \"implication\",\n  \"pos\": \"noun\",\n  \"pron\": \"ˌɪmplɪˈkeɪʃən\",\n  \"explanation\": \"A conclusion that can be drawn from something although it is not explicitly stated.\",\n  \"example\": \"The implication of his silence was that he disagreed.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Card",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/cards/{{cardId}}"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"0c51d008-ae19-427b-92ce-26c135b3dab7\",\n  \"userId\": \"e6a8189b-e54f-4c86-8bd0-ff57e04c26b3\",\n  \"word\": \"resembles\",\n  \"pos\": \"verb\",\n  \"pron\": \"/rɪˈzɛmb(ə)lz/\",\n  \"explanation\": \"Third-person singular present tense of resemble.\",\n  \"example\": [\n    {\n      \"id\": \"c6fc2d70-5aa4-4402-a0e7-74bd7501843d\",\n      \"sentence\": \"Everyone says she resembles her mother, especially around the eyes and smile.\",\n      \"createdAt\": \"2026-06-06T05:28:44.818Z\"\n    }\n  ],\n  \"mastery\": \"learning\",\n  \"streak\": 0,\n  \"addedAt\": \"2026-06-06T02:28:44.810Z\",\n  \"updatedAt\": \"2026-06-06T02:28:44.810Z\",\n  \"progress\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update Card",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/cards/{{cardId}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"explanation\": \"Updated explanation here.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Card",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/cards/{{cardId}}"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"ok\": true }"
+            }
+          ]
+        },
+        {
+          "name": "Get Saved Sentences",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/cards/{{cardId}}/sentences"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"sentences\": [\n    {\n      \"id\": \"c6fc2d70-5aa4-4402-a0e7-74bd7501843d\",\n      \"sentence\": \"Everyone says she resembles her mother, especially around the eyes and smile.\",\n      \"createdAt\": \"2026-06-06T05:28:44.818Z\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Generate New Sentences",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/cards/{{cardId}}/sentences"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"sentences\": [\n    {\n      \"id\": \"a1b2c3d4-...\",\n      \"sentence\": \"The architect's design clearly resembles the style of Gaudi.\",\n      \"createdAt\": \"2026-06-06T11:00:00.000Z\"\n    },\n    {\n      \"id\": \"e5f6g7h8-...\",\n      \"sentence\": \"Her handwriting closely resembles her father's precise script.\",\n      \"createdAt\": \"2026-06-06T11:00:00.001Z\"\n    }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Practice",
+      "item": [
+        {
+          "name": "Round 1 — Start",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/practice/round1",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wordIds\": [\"{{cardId}}\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "Round 1 — Score",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/practice/round1/score",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wordId\": \"{{cardId}}\",\n  \"correct\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Round 2 — Start",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/practice/round2",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wordIds\": [\"{{cardId}}\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "Round 2 — Score",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/practice/round2/score",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wordId\": \"{{cardId}}\",\n  \"correct\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Mode 2 — Start",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/practice/mode2",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wordId\": \"{{cardId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Mode 2 — Score",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/practice/mode2/score",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wordId\": \"{{cardId}}\",\n  \"correct\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Mode 3 — Get Hint",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/practice/mode3/hint",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wordId\": \"{{cardId}}\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"hint\": \"Команді вдалося придумати геніальне рішення в останній момент.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Mode 3 — Check Sentence",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/practice/mode3/check",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wordId\": \"{{cardId}}\",\n  \"sentence\": \"The coach propelled his team to victory with his motivational speech.\",\n  \"hintSentence\": \"Тренер спонукав свою команду до перемоги натхненною промовою.\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK — correct usage",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"wordUsedCorrectly\": true,\n  \"explanation\": \"Слово використано правильно. 'Propelled' тут означає 'спонукав, надав імпульс' — це точно відповідає значенню слова в цьому контексті.\",\n  \"grammarFeedback\": \"Речення граматично правильне.\"\n}"
+            },
+            {
+              "name": "200 OK — incorrect usage",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"wordUsedCorrectly\": false,\n  \"explanation\": \"Слово використано неправильно. 'Propel' означає рухати вперед або надавати імпульс фізично чи метафорично. У цьому реченні краще підійшло б слово 'convinced' або 'persuaded'.\",\n  \"grammarFeedback\": \"У реченні є помилка: після 'he' потрібно використовувати 'was' замість 'were'.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Mode 3 — Score",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/practice/mode3/score",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wordId\": \"{{cardId}}\",\n  \"correct\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Error Review — Save Error",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/practice/errors",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wordId\": \"{{cardId}}\",\n  \"originalSentence\": \"We should urgently come up with an idea, how can we get the money.\",\n  \"grammarFeedback\": \"У реченні є кілька граматичних помилок: після 'idea' не потрібна кома; підрядне речення 'how can we get the money' має бути у непрямому питанні: 'how we can get the money'.\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"a1b2c3d4-0000-0000-0000-000000000001\",\n  \"userId\": \"e6a8189b-e54f-4c86-8bd0-ff57e04c26b3\",\n  \"wordId\": \"{{cardId}}\",\n  \"originalSentence\": \"We should urgently come up with an idea, how can we get the money.\",\n  \"grammarFeedback\": \"У реченні є кілька граматичних помилок: ...\",\n  \"resolvedSentence\": null,\n  \"resolvedFeedback\": null,\n  \"resolved\": false,\n  \"createdAt\": \"2026-06-07T12:00:00.000Z\",\n  \"updatedAt\": \"2026-06-07T12:00:00.000Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Error Review — List Errors",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/practice/errors"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "[\n  {\n    \"id\": \"a1b2c3d4-0000-0000-0000-000000000001\",\n    \"userId\": \"e6a8189b-e54f-4c86-8bd0-ff57e04c26b3\",\n    \"wordId\": \"{{cardId}}\",\n    \"word\": \"come up with\",\n    \"pos\": \"verb\",\n    \"originalSentence\": \"We should urgently come up with an idea, how can we get the money.\",\n    \"grammarFeedback\": \"У реченні є кілька граматичних помилок: ...\",\n    \"resolvedSentence\": null,\n    \"resolvedFeedback\": null,\n    \"resolved\": false,\n    \"createdAt\": \"2026-06-07T12:00:00.000Z\",\n    \"updatedAt\": \"2026-06-07T12:00:00.000Z\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Error Review — Check Corrected Sentence",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/practice/errors/:id/check",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sentence\": \"We should urgently come up with a way to get the money to repair the roof before winter.\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"wordUsedCorrectly\": true,\n  \"explanation\": \"Слово використано правильно. 'Come up with' означає придумати або знайти рішення — саме це і відбувається в реченні.\",\n  \"grammarFeedback\": \"Речення граматично правильне.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Error Review — Resolve Error",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/practice/errors/:id/resolve"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"a1b2c3d4-0000-0000-0000-000000000001\",\n  \"resolved\": true,\n  \"updatedAt\": \"2026-06-07T12:30:00.000Z\"\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
