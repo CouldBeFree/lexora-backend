@@ -1,0 +1,34 @@
+# Dependencies / build output (reinstalled & rebuilt inside the image)
+node_modules
+dist
+build
+coverage
+
+# Secrets / env — never bake into the image
+.env
+.env.local
+.env.*.local
+
+# VCS / CI
+.git
+.gitignore
+.github
+
+# Deploy / compose artifacts (used on the server, not inside the image)
+docker-compose.yml
+docker-compose.prod.yml
+deploy
+Dockerfile
+.dockerignore
+
+# Editor / OS
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

@@ -1,0 +1,78 @@
+name: Deploy backend
+
+on:
+  push:
+    branches:
+      - "release-*"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare image variables
+        id: image
+        run: |
+          OWNER_LOWER="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          BRANCH_NAME="${GITHUB_REF_NAME}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          IMAGE_NAME="ghcr.io/${OWNER_LOWER}/lexora-be"
+          IMAGE_TAG="${BRANCH_NAME}-${SHORT_SHA}"
+          echo "owner_lower=${OWNER_LOWER}" >> $GITHUB_OUTPUT
+          echo "branch_name=${BRANCH_NAME}" >> $GITHUB_OUTPUT
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ steps.image.outputs.image_name }}:${{ steps.image.outputs.branch_name }} \
+            -t ${{ steps.image.outputs.image_name }}:${{ steps.image.outputs.image_tag }} .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ steps.image.outputs.image_name }}:${{ steps.image.outputs.branch_name }}
+          docker push ${{ steps.image.outputs.image_name }}:${{ steps.image.outputs.image_tag }}
+
+      - name: Copy compose + postgres init to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "docker-compose.prod.yml,docker/postgres/init"
+          target: "/opt/apps/lexora-backend"
+
+      - name: Deploy on server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script_stop: true
+          script: |
+            cd /opt/apps/lexora-backend
+            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+            if grep -q '^BACKEND_IMAGE_TAG=' .env; then
+              sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=${{ steps.image.outputs.image_tag }}/' .env
+            else
+              echo 'BACKEND_IMAGE_TAG=${{ steps.image.outputs.image_tag }}' >> .env
+            fi
+            if ! grep -q '^GITHUB_REPOSITORY_OWNER=' .env; then
+              echo 'GITHUB_REPOSITORY_OWNER=${{ steps.image.outputs.owner_lower }}' >> .env
+            fi
+            docker compose -f docker-compose.prod.yml pull api
+            docker compose -f docker-compose.prod.yml up -d
+            docker image prune -f

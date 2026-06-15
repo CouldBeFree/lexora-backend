@@ -1,0 +1,51 @@
+services:
+  api:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/lexora-be:${BACKEND_IMAGE_TAG}
+    container_name: lexora-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Talk to the bundled Postgres over the private `internal` network by
+      # container name. These override whatever may be present in .env.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    expose:
+      - "3010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - edge      # reachable by edge-nginx (proxy_pass http://lexora-api:3010)
+      - internal  # reach Postgres
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: lexora-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # init scripts enable uuid-ossp / pgcrypto before TypeORM synchronize runs
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal  # private only — never exposed to edge or the host
+
+networks:
+  edge:
+    external: true
+    name: ${EDGE_NETWORK}
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: lexora-postgres-data
