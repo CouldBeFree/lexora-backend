@@ -78,7 +78,7 @@ export class CardsService {
     return { ...card, example: sentences };
   }
 
-  async create(userId: string, dto: CreateCardDto): Promise<VocabCard> {
+  async create(userId: string, dto: CreateCardDto) {
     const card = await this.repo.save(
       this.repo.create({
         userId,
@@ -94,7 +94,7 @@ export class CardsService {
       await this.cardSentencesService.saveOne(card.id, userId, dto.example);
     }
 
-    return card;
+    return this.findOne(card.id, userId);
   }
 
   async update(id: string, userId: string, dto: UpdateCardDto) {
