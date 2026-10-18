@@ -14,16 +14,21 @@ export interface AutofillResult {
 
 @Injectable()
 export class AutofillService {
+  private client: Anthropic | null = null;
+
   constructor(private readonly config: ConfigService) {}
 
   private getClient(): Anthropic {
-    const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
-    if (!apiKey) {
-      throw new ServiceUnavailableException({
-        message: 'ANTHROPIC_API_KEY is not configured',
-      });
+    if (!this.client) {
+      const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
+      if (!apiKey) {
+        throw new ServiceUnavailableException({
+          message: 'ANTHROPIC_API_KEY is not configured',
+        });
+      }
+      this.client = new Anthropic({ apiKey });
     }
-    return new Anthropic({ apiKey });
+    return this.client;
   }
 
   async autofill(word: string): Promise<AutofillResult> {
@@ -31,12 +36,14 @@ export class AutofillService {
     if (!trimmed)
       throw new BadRequestException({ message: 'word is required' });
     const client = this.getClient();
+    const nonce = Math.random().toString(36).slice(2, 10);
 
     let response: Anthropic.Message;
     try {
       response = await client.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
+        temperature: 1,
         output_config: {
           format: {
             type: 'json_schema',
@@ -67,7 +74,7 @@ export class AutofillService {
         messages: [
           {
             role: 'user',
-            content: `Provide the definition, a natural example sentence, and the part of speech for the English word: "${trimmed}"`,
+            content: `[Request ID: ${nonce}] Provide the definition, a natural example sentence, and the part of speech for the English word: "${trimmed}"`,
           },
         ],
       });
@@ -82,6 +89,12 @@ export class AutofillService {
       });
     }
 
-    return JSON.parse(text.text) as AutofillResult;
+    try {
+      return JSON.parse(text.text) as AutofillResult;
+    } catch {
+      throw new ServiceUnavailableException({
+        message: 'Failed to parse AI response',
+      });
+    }
   }
 }

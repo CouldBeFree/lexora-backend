@@ -86,7 +86,7 @@ export class CardsService {
         pos: dto.pos ?? 'noun',
         pron: dto.pron ?? '',
         explanation: dto.explanation ?? '',
-        example: [],
+        example: dto.example ? [dto.example] : [],
       }),
     );
 
@@ -107,8 +107,10 @@ export class CardsService {
 
     const card = await this.findEntity(id, userId);
     for (const key of fields) {
+      const value = dto[key as keyof UpdateCardDto];
+      // example is a simple-json string[] column; the DTO carries a single string
       (card as unknown as Record<string, unknown>)[key] =
-        dto[key as keyof UpdateCardDto];
+        key === 'example' ? [value] : value;
     }
     await this.repo.save(card);
     return this.findOne(id, userId);

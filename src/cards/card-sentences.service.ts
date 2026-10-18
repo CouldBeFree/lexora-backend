@@ -51,7 +51,7 @@ export class CardSentencesService {
     ];
     const shuffledContexts = allContexts
       .sort(() => Math.random() - 0.5)
-      .slice(0, 3);
+      .slice(0, 2);
     const contextList = shuffledContexts
       .map((ctx, i) => `  Sentence ${i + 1}: ${ctx}`)
       .join('\n');
@@ -123,10 +123,6 @@ Respond ONLY with a valid JSON array, no markdown, no extra text:
     sentence: string,
   ): Promise<void> {
     await this.repo.save(this.repo.create({ cardId, userId, sentence }));
-  }
-
-  async generateStrings(card: VocabCard): Promise<string[]> {
-    return this.callAi(card);
   }
 
   async generateSentences(
