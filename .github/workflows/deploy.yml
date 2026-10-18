@@ -65,14 +65,12 @@ jobs:
           script: |
             cd /opt/apps/lexora-backend
             docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
-            if grep -q '^BACKEND_IMAGE_TAG=' .env; then
-              sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=${{ steps.image.outputs.image_tag }}/' .env
-            else
-              echo 'BACKEND_IMAGE_TAG=${{ steps.image.outputs.image_tag }}' >> .env
-            fi
-            if ! grep -q '^GITHUB_REPOSITORY_OWNER=' .env; then
-              echo 'GITHUB_REPOSITORY_OWNER=${{ steps.image.outputs.owner_lower }}' >> .env
-            fi
+            set -x
+            test -f .env || { echo "ERROR: /opt/apps/lexora-backend/.env is missing — create it first (see DEPLOY.md)"; exit 1; }
+            sed -i '/^BACKEND_IMAGE_TAG=/d' .env
+            echo 'BACKEND_IMAGE_TAG=${{ steps.image.outputs.image_tag }}' >> .env
+            grep -q '^GITHUB_REPOSITORY_OWNER=' .env || echo 'GITHUB_REPOSITORY_OWNER=${{ steps.image.outputs.owner_lower }}' >> .env
+            docker compose -f docker-compose.prod.yml config >/dev/null
             docker compose -f docker-compose.prod.yml pull api
             docker compose -f docker-compose.prod.yml up -d
             docker image prune -f

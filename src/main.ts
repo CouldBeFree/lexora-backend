@@ -31,9 +31,9 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 3010);
   console.log(
-    `🚀 Server running on http://localhost:${process.env.PORT ?? 3000}`,
+    `🚀 Server running on http://localhost:${process.env.PORT ?? 3010}`,
   );
 }
 bootstrap();

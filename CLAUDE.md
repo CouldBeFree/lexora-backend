@@ -5,13 +5,15 @@ NestJS REST API for a vocabulary learning app. TypeScript, TypeORM, PostgreSQL.
 ## Stack
 
 - **Framework:** NestJS 11
-- **ORM:** TypeORM 1.x (`synchronize: true` in dev — no migrations runner needed locally)
-- **Database:** PostgreSQL (port 5434 by default, not 5432)
+- **ORM:** TypeORM 1.x (`synchronize: true` in **all** environments, dev and prod — schema is built from entities, no migrations runner)
+- **Database:** PostgreSQL (host port 5434 in dev, not 5432; inside Docker the API reaches it as `postgres:5432`)
 - **Auth:** JWT in `lx_session` httpOnly cookie (30-day expiry), Google OAuth 2.0
 - **AI:** `@anthropic-ai/sdk`, model `claude-sonnet-4-6`
 - **Cron:** `@nestjs/schedule` with `ScheduleModule.forRoot()` in AppModule
 
 ## Environment variables
+
+Template: `.env.example`.
 
 ```
 POSTGRES_HOST=localhost
@@ -19,21 +21,31 @@ POSTGRES_PORT=5434
 POSTGRES_DB=lexora
 POSTGRES_USER=lexora
 POSTGRES_PASSWORD=lexora_dev_password
-JWT_SECRET=...
+JWT_SECRET=...                 # falls back to 'fallback_secret' — must be set in prod
 ANTHROPIC_API_KEY=...
-GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_ID=...           # optional; blank → strategy uses 'DISABLED', Google routes won't work
 GOOGLE_CLIENT_SECRET=...
-GOOGLE_CALLBACK_URL=...
-FRONTEND_URL=http://localhost:3000
-PORT=3000
+GOOGLE_CALLBACK_URL=http://localhost:3010/auth/google/callback
+FRONTEND_URL=http://localhost:3000   # CORS origin + OAuth redirect target
+PORT=3010
+NODE_ENV=development           # 'production' adds the `secure` flag to the lx_session cookie
 ```
 
 ## Running locally
 
 ```bash
-docker compose up -d   # starts postgres on port 5434
-npm run start:dev      # watch mode
+docker compose up -d postgres   # only postgres, on host port 5434
+npm run start:dev               # watch mode, http://localhost:3010
 ```
+
+Plain `docker compose up -d` also starts the `api` container on `PORT`, which collides with `npm run start:dev`.
+
+## Deployment
+
+Push to a `release-*` branch → `.github/workflows/deploy.yml` builds `ghcr.io/couldbefree/lexora-be`, scp's `docker-compose.prod.yml` + `docker/postgres/init` to `/opt/apps/lexora-backend`, then ssh's in and runs `docker compose pull && up -d`. Full details in `DEPLOY.md`.
+
+- `appleboy/ssh-action` runs the script line by line — keep every command single-line (no multi-line `if/else`).
+- `docker/postgres/init/01-init.sql` enables `uuid-ossp` + `pgcrypto` on first DB boot.
 
 ## Project structure
 
@@ -70,6 +82,16 @@ src/
 │       ├── vocab-card.entity.ts
 │       └── card-sentence.entity.ts
 │
+├── phrases/                   # phrase cards ("to lay eyes on") — no practice, no mastery
+│   ├── phrases.controller.ts  # all /phrases/* routes
+│   ├── phrases.service.ts     # CRUD scoped by userId; AI fill on create (best-effort)
+│   ├── phrases-ai.service.ts  # Anthropic calls: explanation + 1 example, or 1 extra example
+│   ├── phrases.module.ts
+│   ├── dto/                   # CreatePhraseDto, UpdatePhraseDto
+│   └── entities/
+│       ├── phrase-card.entity.ts
+│       └── phrase-sentence.entity.ts
+│
 └── practice/                  # spaced-repetition practice sessions
     ├── practice.controller.ts    # all /practice/* routes
     ├── practice.service.ts       # scoring logic, mastery sync, @Cron decay job
@@ -83,10 +105,19 @@ src/
         ├── word-progress.entity.ts
         └── practice-error.entity.ts
 
-migrations/
-├── 001_create_word_progress.sql   # manual SQL migration for word_progress table
+migrations/                        # manual SQL, NOT applied automatically (schema comes from synchronize)
+├── 001_create_word_progress.sql
 ├── 002_add_mode3_word_progress.sql
 └── 003_create_practice_errors.sql
+
+docker-compose.yml                 # dev: postgres (+ optional api container)
+docker-compose.prod.yml            # prod: api on `edge` + `internal` networks, postgres internal only
+Dockerfile                         # multi-stage, EXPOSE 3010
+docker/postgres/init/01-init.sql   # enables uuid-ossp / pgcrypto
+deploy/nginx/                      # edge-nginx vhost for lexora-backend.dockore.org
+.github/workflows/deploy.yml       # CI deploy on push to release-*
+API.md                             # endpoint reference (request/response examples)
+DEPLOY.md                          # production deploy guide
 ```
 
 ## Database schema
@@ -110,7 +141,7 @@ migrations/
 | pos | varchar | default `'noun'` |
 | pron | varchar | default `''` |
 | explanation | varchar | default `''` |
-| example | simple-json (`string[]`) | DTO passes single string → stored as `[string]`; default `[]` |
+| example | simple-json (`string[]`) | DTO passes single string (POST/PATCH) → stored as `[string]`; default `[]`. Only fed to AI prompts as the "do not reuse" example — API responses replace it with rows from `card_sentences` |
 | mastery | enum | `'learning'` \| `'mastered'`, default `'learning'` |
 | streak | int | default 0 |
 | addedAt / updatedAt | timestamp | auto |
@@ -121,10 +152,30 @@ migrations/
 | id | uuid PK | auto |
 | cardId | uuid FK→vocab_cards | CASCADE delete |
 | userId | uuid FK→users | CASCADE delete |
-| sentence | varchar | AI-generated example sentence |
+| sentence | varchar | example sentence (user-supplied or AI-generated) |
 | createdAt | timestamp | auto |
 
-2 rows are inserted automatically on `POST /cards`. Additional rows can be added via `POST /cards/:id/sentences`.
+`POST /cards` inserts one row from the DTO `example` (if given) — no AI call. AI-generated rows are added only via `POST /cards/:id/sentences` (2 per call). Always returned newest first.
+
+### `phrase_cards`
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | auto |
+| userId | uuid FK→users | CASCADE delete |
+| phrase | varchar | trimmed, e.g. `to lay eyes on` |
+| explanation | varchar | default `''`; AI-generated in English, editable via PATCH |
+| addedAt / updatedAt | timestamp | auto |
+
+Phrases are completely separate from `vocab_cards`: no `word_progress`, no mastery, never used by `/practice/*`.
+
+### `phrase_sentences`
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | auto |
+| phraseId | uuid FK→phrase_cards | CASCADE delete |
+| userId | uuid FK→users | CASCADE delete |
+| sentence | varchar | AI-generated example |
+| createdAt | timestamp | auto |
 
 ### `word_progress`
 | column | type | notes |
@@ -160,25 +211,40 @@ migrations/
 
 | method | path | auth | description |
 |---|---|---|---|
-| POST | /auth/register | — | create account, sets lx_session cookie |
-| POST | /auth/login | — | email+password login, sets lx_session cookie |
-| POST | /auth/logout | — | clears lx_session cookie |
+| POST | /auth/register | — | create account, sets lx_session cookie; returns `{id, name, email}` (409 if email taken) |
+| POST | /auth/login | — | email+password login, sets lx_session cookie; returns `{id, name, email}` |
+| POST | /auth/logout | — | clears lx_session cookie; returns `{ok: true}` |
 | GET | /auth/me | JWT | returns `{id, name, email}` |
 | GET | /auth/google | — | redirect to Google OAuth |
-| GET | /auth/google/callback | — | OAuth callback, sets cookie, redirects to frontend |
+| GET | /auth/google/callback | — | OAuth callback, sets cookie, redirects to `${FRONTEND_URL}/vocabulary`; on denial → `${FRONTEND_URL}/auth?error=google_denied` |
 
 ### Cards (`/cards`) — all require JWT
 
 | method | path | description |
 |---|---|---|
-| GET | /cards | list all cards; `example` field is populated from `card_sentences` as `{id, sentence, createdAt}[]` |
-| POST | /cards | create card; DTO `example` string saved to `card_sentences`; AI auto-generates 2 sentences into `card_sentences` |
-| GET | /cards/:id | get single card; `example` field is `{id, sentence, createdAt}[]` from `card_sentences` |
-| PATCH | /cards/:id | update card fields |
-| DELETE | /cards/:id | delete card |
-| GET | /cards/autofill?word= | AI-fill explanation, example, POS for a word |
-| GET | /cards/:id/sentences | list all saved example sentences for a card |
-| POST | /cards/:id/sentences | AI-generate 2 new example sentences and save to DB |
+| GET | /cards | list all cards (newest first); `example` is `{id, sentence, createdAt}[]` from `card_sentences`; `progress` is `{round1_completed, round2_completed, mode2_completed, mode3_completed, total_score, last_practiced}` from `word_progress`, or `null` if never practiced |
+| POST | /cards | create card; DTO `example` string saved to `vocab_cards.example` and as one row in `card_sentences` (no AI call); returns the card in the `GET /cards/:id` shape |
+| GET | /cards/:id | get single card; `example` field is `{id, sentence, createdAt}[]` from `card_sentences` (no `progress`) |
+| PATCH | /cards/:id | update `word`, `pos`, `pron`, `explanation`, `example`, `mastery`, `streak`; `example` overwrites `vocab_cards.example` only (not `card_sentences`); 400 if no fields; returns the `GET /cards/:id` shape |
+| DELETE | /cards/:id | delete card; returns `{ok: true}` |
+| GET | /cards/autofill?word= | AI-fill for a word; returns `{explanation, exampleSentence, partOfSpeech}`; saves nothing |
+| GET | /cards/:id/sentences | returns `{sentences: {id, sentence, createdAt}[]}` — all saved sentences for the card |
+| POST | /cards/:id/sentences | AI-generate 2 new example sentences, save to DB; returns `{sentences}` with only the new rows |
+
+### Phrases (`/phrases`) — all require JWT
+
+A phrase response is `{id, userId, phrase, explanation, addedAt, updatedAt, examples: {id, sentence, createdAt}[]}` (examples newest first). `:id` goes through `ParseUUIDPipe`; a phrase of another user → 404 `Phrase not found`.
+
+| method | path | body | description |
+|---|---|---|---|
+| GET | /phrases | — | list all phrases (newest first) |
+| POST | /phrases | `{phrase}` | create; one AI call fills `explanation` + 1 example. If AI fails (503 from `PhrasesAiService`), the phrase is still saved with `explanation: ''` and `examples: []` |
+| GET | /phrases/:id | — | single phrase |
+| PATCH | /phrases/:id | `{phrase?, explanation?}` | manual edit; 400 if no fields; returns the phrase |
+| DELETE | /phrases/:id | — | delete (examples cascade); returns `{ok: true}` |
+| POST | /phrases/:id/generate | — | AI regenerates `explanation` (overwrites) + adds 1 example; for phrases saved while AI was down. 503 on AI failure |
+| GET | /phrases/:id/sentences | — | returns `{sentences: {id, sentence, createdAt}[]}` |
+| POST | /phrases/:id/sentences | — | AI-generate 1 new example (existing ones passed as "do not reuse"); returns `{sentences}` with only the new row |
 
 ### Practice (`/practice`) — all require JWT
 
@@ -197,6 +263,8 @@ migrations/
 | GET | /practice/errors | — | list all unresolved errors for the user; includes `word` and `pos` from vocab_cards |
 | POST | /practice/errors/:id/check | `{sentence}` | AI checks corrected sentence; saves `resolvedSentence`/`resolvedFeedback` to record; returns `{wordUsedCorrectly, explanation, grammarFeedback}` |
 | PUT | /practice/errors/:id/resolve | — | mark error as resolved; returns `{id, resolved, updatedAt}` |
+
+All `*/score` routes return the updated `word_progress` row. All `wordId`/`wordIds` fields are validated as UUID v4; `:id` on `/practice/errors/:id/*` goes through `ParseUUIDPipe`.
 
 ## Scoring rules
 
@@ -234,12 +302,13 @@ export class ExampleController {
 
 ## AI pattern
 
-`AutofillService`, `PracticeAiService`, and `CardSentencesService` follow the same pattern:
+`AutofillService`, `PracticeAiService`, `CardSentencesService`, and `PhrasesAiService` follow the same pattern:
 - Lazy-instantiate `Anthropic` client from `ANTHROPIC_API_KEY` config
 - Single batched request per operation (no per-word calls)
 - Wrap `JSON.parse` in try/catch → throw `ServiceUnavailableException`
 - Use `claude-sonnet-4-6` model
 - Pass a random nonce in the prompt + `temperature: 1` to guarantee unique output on every call
+- `AutofillService` and `PhrasesAiService` use structured output (`output_config.format` JSON schema); the others ask for raw JSON in the prompt
 
 ## Validation
 

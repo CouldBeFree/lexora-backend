@@ -7,10 +7,13 @@ import { VocabCard } from './cards/entities/vocab-card.entity';
 import { CardSentenceEntity } from './cards/entities/card-sentence.entity';
 import { WordProgress } from './practice/entities/word-progress.entity';
 import { PracticeError } from './practice/entities/practice-error.entity';
+import { PhraseCard } from './phrases/entities/phrase-card.entity';
+import { PhraseSentenceEntity } from './phrases/entities/phrase-sentence.entity';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { CardsModule } from './cards/cards.module';
 import { PracticeModule } from './practice/practice.module';
+import { PhrasesModule } from './phrases/phrases.module';
 
 @Module({
   imports: [
@@ -30,7 +33,15 @@ import { PracticeModule } from './practice/practice.module';
           'POSTGRES_PASSWORD',
           'lexora_dev_password',
         ),
-        entities: [User, VocabCard, CardSentenceEntity, WordProgress, PracticeError],
+        entities: [
+          User,
+          VocabCard,
+          CardSentenceEntity,
+          WordProgress,
+          PracticeError,
+          PhraseCard,
+          PhraseSentenceEntity,
+        ],
         synchronize: true,
       }),
     }),
@@ -39,6 +50,7 @@ import { PracticeModule } from './practice/practice.module';
     AuthModule,
     CardsModule,
     PracticeModule,
+    PhrasesModule,
   ],
 })
 export class AppModule {}
