@@ -34,6 +34,10 @@
   - [POST /phrases/:id/generate 🔒](#post-phrasesidgenerate-)
   - [GET /phrases/:id/sentences 🔒](#get-phrasesidsentences-)
   - [POST /phrases/:id/sentences 🔒](#post-phrasesidsentences-)
+- [Push](#push)
+  - [GET /push/public-key 🔒](#get-pushpublic-key-)
+  - [POST /push/subscriptions 🔒](#post-pushsubscriptions-)
+  - [DELETE /push/subscriptions 🔒](#delete-pushsubscriptions-)
 - [Data Models](#data-models)
 
 🔒 = requires a valid `lx_session` cookie
@@ -749,6 +753,101 @@ Generate **1 new example** with AI and save it. Existing examples are sent to AI
 
 ---
 
+## Push
+
+Phrase reminders via Web Push: 3 a day at random moments between 08:00 and 22:00 in the user's time zone, one in each third of that window. A reminder is a quiz — it shows only the phrase; tapping it opens `/phrases?open=<id>` in the app. The schedule is per user and every subscribed device of the user gets the same reminders. See *Phrase reminders cron* in `CLAUDE.md` for the scheduling rules.
+
+If any `VAPID_*` variable is unset, push is disabled: `GET /push/public-key` responds `503` and the cron sends nothing.
+
+**Notification payload** (JSON the service worker receives):
+
+```json
+{
+  "title": "to lay eyes on",
+  "body": "Remember what it means? Tap to check.",
+  "url": "/phrases?open=3f6c1a2e-8b4d-4e0f-9a7c-1d2e3f4a5b6c",
+  "tag": "phrase-reminder"
+}
+```
+
+---
+
+### `GET /push/public-key` 🔒
+
+VAPID public key to pass to `pushManager.subscribe({ applicationServerKey })` (base64url; decode to bytes first).
+
+**Response `200`**
+
+```json
+{ "publicKey": "BCBYKaXQVMsGRhEKIrDGg2ZdxQ…" }
+```
+
+**Errors**
+
+| Status | Condition |
+|--------|-----------|
+| `401` | Not authenticated |
+| `503` | `"Push notifications are not configured"` |
+
+---
+
+### `POST /push/subscriptions` 🔒
+
+Save this browser's push subscription and start reminders. Idempotent: the same `endpoint` is updated in place (and moved to the current user if another account used it). Creates the user's schedule if there is none; a different `timezone` than stored reschedules it.
+
+**Request body** — `PushSubscription.toJSON()` flattened, plus the device's IANA time zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`):
+
+```json
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/…",
+  "p256dh": "BNc…",
+  "auth": "tBH…",
+  "timezone": "Europe/Kyiv"
+}
+```
+
+**Response `201`**
+
+```json
+{ "ok": true }
+```
+
+**Errors**
+
+| Status | Condition |
+|--------|-----------|
+| `400` | A field is missing or empty |
+| `400` | `"Unsupported push service"` — `endpoint` is not https on `fcm.googleapis.com`, `*.push.services.mozilla.com`, `*.notify.windows.com` or `*.push.apple.com` |
+| `400` | `"Invalid timezone"` — not an IANA zone |
+| `401` | Not authenticated |
+
+---
+
+### `DELETE /push/subscriptions` 🔒
+
+Remove this browser's subscription. When it was the user's last one, the reminder schedule is deleted too. Removing an unknown endpoint is not an error.
+
+**Request body**
+
+```json
+{ "endpoint": "https://fcm.googleapis.com/fcm/send/…" }
+```
+
+**Response `200`**
+
+```json
+{ "ok": true }
+```
+
+**Errors**
+
+| Status | Condition |
+|--------|-----------|
+| `400` | `endpoint` missing or empty |
+| `401` | Not authenticated |
+
+---
+
 ## Data Models
 
 ### User
@@ -842,3 +941,6 @@ Stored in the `phrase_sentences` table; deleted together with the phrase.
 | `POST` | `/phrases/:id/generate` | 🔒 | `201` | Regenerate explanation + add 1 example |
 | `GET` | `/phrases/:id/sentences` | 🔒 | `200` | List examples |
 | `POST` | `/phrases/:id/sentences` | 🔒 | `201` | Generate 1 more example |
+| `GET` | `/push/public-key` | 🔒 | `200` | VAPID public key for subscribing |
+| `POST` | `/push/subscriptions` | 🔒 | `201` | Save this device; start phrase reminders |
+| `DELETE` | `/push/subscriptions` | 🔒 | `200` | Remove this device; stop reminders with the last one |

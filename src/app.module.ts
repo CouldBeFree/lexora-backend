@@ -9,11 +9,14 @@ import { WordProgress } from './practice/entities/word-progress.entity';
 import { PracticeError } from './practice/entities/practice-error.entity';
 import { PhraseCard } from './phrases/entities/phrase-card.entity';
 import { PhraseSentenceEntity } from './phrases/entities/phrase-sentence.entity';
+import { PushSubscriptionEntity } from './push/entities/push-subscription.entity';
+import { PhraseReminder } from './push/entities/phrase-reminder.entity';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { CardsModule } from './cards/cards.module';
 import { PracticeModule } from './practice/practice.module';
 import { PhrasesModule } from './phrases/phrases.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -41,6 +44,8 @@ import { PhrasesModule } from './phrases/phrases.module';
           PracticeError,
           PhraseCard,
           PhraseSentenceEntity,
+          PushSubscriptionEntity,
+          PhraseReminder,
         ],
         synchronize: true,
       }),
@@ -51,6 +56,7 @@ import { PhrasesModule } from './phrases/phrases.module';
     CardsModule,
     PracticeModule,
     PhrasesModule,
+    PushModule,
   ],
 })
 export class AppModule {}

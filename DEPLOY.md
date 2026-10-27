@@ -83,6 +83,11 @@ GOOGLE_CALLBACK_URL=https://lexora-backend.dockore.org/auth/google/callback
 
 # ── AI ──
 ANTHROPIC_API_KEY=<...>
+
+# ── Web Push (phrase reminders) ──
+VAPID_PUBLIC_KEY=<...>
+VAPID_PRIVATE_KEY=<...>
+VAPID_SUBJECT=mailto:<your email>
 ```
 
 Notes:
@@ -93,6 +98,10 @@ Notes:
   read by `src` (`auth.module.ts` / `jwt.strategy.ts` and `google.strategy.ts`)
   and have localhost/fallback defaults, so they **must** be set for prod.
 - Generate secrets with e.g. `openssl rand -hex 32`.
+- Generate the VAPID pair once with `npx web-push generate-vapid-keys` and never
+  rotate it casually: existing browser subscriptions are bound to the public key,
+  so a new pair silently breaks them until each device turns reminders off and on.
+  Without `VAPID_*` the API still starts; push is just disabled.
 
 ### Determine `EDGE_NETWORK`
 

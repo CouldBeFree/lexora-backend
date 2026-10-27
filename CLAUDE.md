@@ -29,6 +29,9 @@ GOOGLE_CALLBACK_URL=http://localhost:3010/auth/google/callback
 FRONTEND_URL=http://localhost:3000   # CORS origin + OAuth redirect target
 PORT=3010
 NODE_ENV=development           # 'production' adds the `secure` flag to the lx_session cookie
+VAPID_PUBLIC_KEY=...           # Web Push for phrase reminders; generate with `npx web-push generate-vapid-keys`
+VAPID_PRIVATE_KEY=...          # any VAPID_* blank → push disabled (GET /push/public-key → 503, cron idle)
+VAPID_SUBJECT=mailto:...       # contact the push services can reach; must be mailto: or https:
 ```
 
 ## Running locally
@@ -91,6 +94,17 @@ src/
 │   └── entities/
 │       ├── phrase-card.entity.ts
 │       └── phrase-sentence.entity.ts
+│
+├── push/                      # phrase reminders via Web Push (3 a day, 08:00–22:00 user time)
+│   ├── push.controller.ts     # GET /push/public-key, POST|DELETE /push/subscriptions
+│   ├── push.service.ts        # VAPID setup, subscription upsert/delete, sendToUser (drops 404/410 endpoints)
+│   ├── phrase-reminders.service.ts  # @Cron every minute: sends due reminders, schedules the next
+│   ├── reminder-schedule.ts   # nextReminderAt() — slot math in the user's IANA time zone (pure, tested)
+│   ├── push.module.ts
+│   ├── dto/                   # SubscribePushDto, UnsubscribePushDto
+│   └── entities/
+│       ├── push-subscription.entity.ts
+│       └── phrase-reminder.entity.ts
 │
 └── practice/                  # spaced-repetition practice sessions
     ├── practice.controller.ts    # all /practice/* routes
@@ -177,6 +191,27 @@ Phrases are completely separate from `vocab_cards`: no `word_progress`, no maste
 | sentence | varchar | AI-generated example |
 | createdAt | timestamp | auto |
 
+### `push_subscriptions`
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | auto |
+| userId | uuid FK→users | CASCADE delete |
+| endpoint | text | unique; push service URL of one browser/device |
+| p256dh / auth | varchar | subscription keys from `PushSubscription.toJSON()` |
+| createdAt | timestamp | auto |
+
+Subscribing an endpoint that belongs to another user re-assigns it (shared device, new login).
+
+### `phrase_reminders`
+| column | type | notes |
+|---|---|---|
+| userId | uuid PK, FK→users | CASCADE delete; one schedule per user, shared by all their devices |
+| timezone | varchar | IANA zone of the device that subscribed last |
+| nextAt | timestamptz | indexed; when the cron sends the next reminder |
+| recentPhraseIds | simple-json (`string[]`) | last 2 sent phrases, skipped when picking the next |
+
+Created by the first subscription, deleted when the user's last subscription goes away.
+
 ### `word_progress`
 | column | type | notes |
 |---|---|---|
@@ -246,6 +281,14 @@ A phrase response is `{id, userId, phrase, explanation, addedAt, updatedAt, exam
 | GET | /phrases/:id/sentences | — | returns `{sentences: {id, sentence, createdAt}[]}` |
 | POST | /phrases/:id/sentences | — | AI-generate 1 new example (existing ones passed as "do not reuse"); returns `{sentences}` with only the new row |
 
+### Push (`/push`) — all require JWT
+
+| method | path | body | description |
+|---|---|---|---|
+| GET | /push/public-key | — | `{publicKey}` (VAPID, base64url) for `pushManager.subscribe`; 503 if VAPID_* is not set |
+| POST | /push/subscriptions | `{endpoint, p256dh, auth, timezone}` | upsert this device; starts the reminder schedule if the user has none (or reschedules on a new time zone). 400 `Unsupported push service` unless the endpoint is https on FCM / Mozilla / WNS / Apple push hosts (the server POSTs to it); 400 `Invalid timezone`. Returns `{ok: true}` |
+| DELETE | /push/subscriptions | `{endpoint}` | remove this device; the schedule goes with the last one. Returns `{ok: true}` |
+
 ### Practice (`/practice`) — all require JWT
 
 | method | path | body | description |
@@ -283,6 +326,13 @@ All `*/score` routes return the updated `word_progress` row. All `wordId`/`wordI
 - Action: `total_score -= 1`, `last_decay_at = NOW()`
 
 After either decay: mastery re-synced to `vocab_cards`.
+
+## Phrase reminders cron (runs every minute)
+
+- The 08:00–22:00 window in the user's time zone is split into 3 equal slots (08:00–12:40, 12:40–17:20, 17:20–22:00); each slot gets one reminder at a random moment. A new schedule skips the slot in progress.
+- Due reminder (`nextAt <= now`): pick a random phrase of the user (not one of `recentPhraseIds` if possible), send to all their subscriptions, then `nextAt` = random moment in the next slot after the old `nextAt`.
+- Payload (quiz, meaning stays in the app): `{title: phrase, body: 'Remember what it means? Tap to check.', url: '/phrases?open=<id>', tag: 'phrase-reminder'}`, TTL 30 min.
+- More than 10 min overdue (API was down) → not sent, rescheduled from now. No phrases → nothing sent, schedule kept. No subscriptions left → schedule deleted.
 
 ## Auth pattern
 
