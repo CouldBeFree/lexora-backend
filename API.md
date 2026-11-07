@@ -755,7 +755,7 @@ Generate **1 new example** with AI and save it. Existing examples are sent to AI
 
 ## Push
 
-Phrase reminders via Web Push: 3 a day at random moments between 08:00 and 22:00 in the user's time zone, one in each third of that window. A reminder is a quiz — it shows only the phrase; tapping it opens `/phrases?open=<id>` in the app. The schedule is per user and every subscribed device of the user gets the same reminders. See *Phrase reminders cron* in `CLAUDE.md` for the scheduling rules.
+Phrase reminders via Web Push: 6 a day at random moments between 08:00 and 22:00 in the user's time zone, one in each sixth of that window. A reminder is a quiz — it shows only the phrase; tapping it opens `/phrases?open=<id>` in the app. The schedule is per user and every subscribed device of the user gets the same reminders. See *Phrase reminders cron* in `CLAUDE.md` for the scheduling rules.
 
 If any `VAPID_*` variable is unset, push is disabled: `GET /push/public-key` responds `503` and the cron sends nothing.
 

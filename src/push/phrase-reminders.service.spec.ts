@@ -90,12 +90,12 @@ describe('PhraseRemindersService', () => {
       { nextAt: Date; recentPhraseIds: string[] },
     ];
     expect(changes.recentPhraseIds).toEqual(['p1']);
-    // Next one lands in the 12:40–17:20 local slot
+    // Next one lands in the 10:20–12:40 local slot
     expect(changes.nextAt.getTime()).toBeGreaterThanOrEqual(
-      Date.parse('2026-10-27T10:40:00Z'),
+      Date.parse('2026-10-27T08:20:00Z'),
     );
     expect(changes.nextAt.getTime()).toBeLessThan(
-      Date.parse('2026-10-27T15:20:00Z'),
+      Date.parse('2026-10-27T10:40:00Z'),
     );
   });
 
@@ -131,12 +131,12 @@ describe('PhraseRemindersService', () => {
       unknown,
       { nextAt: Date },
     ];
-    // Tomorrow's 08:00–12:40 local slot
+    // Tomorrow's 08:00–10:20 local slot
     expect(changes.nextAt.getTime()).toBeGreaterThanOrEqual(
       Date.parse('2026-10-28T06:00:00Z'),
     );
     expect(changes.nextAt.getTime()).toBeLessThan(
-      Date.parse('2026-10-28T10:40:00Z'),
+      Date.parse('2026-10-28T08:20:00Z'),
     );
   });
 

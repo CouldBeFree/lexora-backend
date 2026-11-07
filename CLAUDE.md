@@ -95,7 +95,7 @@ src/
 │       ├── phrase-card.entity.ts
 │       └── phrase-sentence.entity.ts
 │
-├── push/                      # phrase reminders via Web Push (3 a day, 08:00–22:00 user time)
+├── push/                      # phrase reminders via Web Push (6 a day, 08:00–22:00 user time)
 │   ├── push.controller.ts     # GET /push/public-key, POST|DELETE /push/subscriptions
 │   ├── push.service.ts        # VAPID setup, subscription upsert/delete, sendToUser (drops 404/410 endpoints)
 │   ├── phrase-reminders.service.ts  # @Cron every minute: sends due reminders, schedules the next
@@ -208,7 +208,7 @@ Subscribing an endpoint that belongs to another user re-assigns it (shared devic
 | userId | uuid PK, FK→users | CASCADE delete; one schedule per user, shared by all their devices |
 | timezone | varchar | IANA zone of the device that subscribed last |
 | nextAt | timestamptz | indexed; when the cron sends the next reminder |
-| recentPhraseIds | simple-json (`string[]`) | last 2 sent phrases, skipped when picking the next |
+| recentPhraseIds | simple-json (`string[]`) | last 5 sent phrases, skipped when picking the next |
 
 Created by the first subscription, deleted when the user's last subscription goes away.
 
@@ -329,7 +329,7 @@ After either decay: mastery re-synced to `vocab_cards`.
 
 ## Phrase reminders cron (runs every minute)
 
-- The 08:00–22:00 window in the user's time zone is split into 3 equal slots (08:00–12:40, 12:40–17:20, 17:20–22:00); each slot gets one reminder at a random moment. A new schedule skips the slot in progress.
+- The 08:00–22:00 window in the user's time zone is split into 6 equal slots of 2h20 (08:00–10:20, 10:20–12:40, 12:40–15:00, 15:00–17:20, 17:20–19:40, 19:40–22:00); each slot gets one reminder at a random moment. A new schedule skips the slot in progress.
 - Due reminder (`nextAt <= now`): pick a random phrase of the user (not one of `recentPhraseIds` if possible), send to all their subscriptions, then `nextAt` = random moment in the next slot after the old `nextAt`.
 - Payload (quiz, meaning stays in the app): `{title: phrase, body: 'Remember what it means? Tap to check.', url: '/phrases?open=<id>', tag: 'phrase-reminder'}`, TTL 30 min.
 - More than 10 min overdue (API was down) → not sent, rescheduled from now. No phrases → nothing sent, schedule kept. No subscriptions left → schedule deleted.
