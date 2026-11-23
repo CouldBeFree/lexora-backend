@@ -1,7 +1,22 @@
-// Phrase reminders go out between 8:00 and 22:00 in the user's time zone.
-// The window is split into equal slots and each slot gets one reminder at a
-// random moment, so the reminders of a day never bunch up.
+// Reminders go out between 8:00 and 22:00 in the user's time zone, 6 a day for
+// each topic (phrases, words) the user has on. The window is split into equal
+// slots and each slot gets one reminder at a random moment, so the reminders of
+// a topic never bunch up.
 export const REMINDERS_PER_DAY = 6;
+
+export type ReminderTopic = 'phrases' | 'words';
+export const REMINDER_TOPICS: ReminderTopic[] = ['phrases', 'words'];
+
+// Columns shared by `phrase_reminders` and `word_reminders`: one user's schedule
+// for one topic, used by all their devices that have the topic on
+export interface ReminderSchedule {
+  userId: string;
+  // IANA zone of the device that subscribed last, e.g. 'Europe/Kyiv'
+  timezone: string;
+  nextAt: Date;
+  // Last sent phrases / words, skipped when picking the next one
+  recentIds: string[];
+}
 
 const WINDOW_START_MIN = 8 * 60;
 const WINDOW_END_MIN = 22 * 60;

@@ -24,7 +24,7 @@ describe('PhraseRemindersService', () => {
       userId: USER,
       timezone: TZ,
       nextAt: new Date('2026-10-27T08:00:00Z'), // 10:00 local, first slot
-      recentPhraseIds: [],
+      recentIds: [],
     } as unknown as PhraseReminder;
     phrases = [
       { id: 'p1', phrase: 'to lay eyes on' },
@@ -79,7 +79,7 @@ describe('PhraseRemindersService', () => {
   it('sends a quiz for a random phrase and schedules the next slot', async () => {
     await runAt('2026-10-27T08:00:30Z');
 
-    expect(push.sendToUser).toHaveBeenCalledWith(USER, {
+    expect(push.sendToUser).toHaveBeenCalledWith(USER, 'phrases', {
       title: 'to lay eyes on',
       body: 'Remember what it means? Tap to check.',
       url: '/phrases?open=p1',
@@ -87,9 +87,9 @@ describe('PhraseRemindersService', () => {
     });
     const [, changes] = reminders.update.mock.calls[0] as [
       unknown,
-      { nextAt: Date; recentPhraseIds: string[] },
+      { nextAt: Date; recentIds: string[] },
     ];
-    expect(changes.recentPhraseIds).toEqual(['p1']);
+    expect(changes.recentIds).toEqual(['p1']);
     // Next one lands in the 10:20–12:40 local slot
     expect(changes.nextAt.getTime()).toBeGreaterThanOrEqual(
       Date.parse('2026-10-27T08:20:00Z'),
@@ -100,21 +100,22 @@ describe('PhraseRemindersService', () => {
   });
 
   it('skips recently sent phrases while others are left', async () => {
-    reminder.recentPhraseIds = ['p1'];
+    reminder.recentIds = ['p1'];
     await runAt('2026-10-27T08:00:30Z');
 
     expect(push.sendToUser).toHaveBeenCalledWith(
       USER,
+      'phrases',
       expect.objectContaining({ title: 'to break the ice' }),
     );
     expect(reminders.update).toHaveBeenCalledWith(
       { userId: USER },
-      expect.objectContaining({ recentPhraseIds: ['p2', 'p1'] }),
+      expect.objectContaining({ recentIds: ['p2', 'p1'] }),
     );
   });
 
   it('falls back to a recent phrase when there is nothing else', async () => {
-    reminder.recentPhraseIds = ['p1', 'p2'];
+    reminder.recentIds = ['p1', 'p2'];
     phrases = phrases.slice(0, 1);
     await runAt('2026-10-27T08:00:30Z');
 
@@ -148,10 +149,11 @@ describe('PhraseRemindersService', () => {
     expect(reminders.update).toHaveBeenCalled();
   });
 
-  it('drops the schedule once the user has no devices left', async () => {
+  it('drops the schedule once no device has phrase reminders on', async () => {
     push.hasSubscriptions.mockResolvedValue(false);
     await runAt('2026-10-27T08:00:30Z');
 
+    expect(push.hasSubscriptions).toHaveBeenCalledWith(USER, 'phrases');
     expect(reminders.delete).toHaveBeenCalledWith({ userId: USER });
     expect(push.sendToUser).not.toHaveBeenCalled();
     expect(reminders.update).not.toHaveBeenCalled();

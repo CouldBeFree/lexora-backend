@@ -29,7 +29,7 @@ GOOGLE_CALLBACK_URL=http://localhost:3010/auth/google/callback
 FRONTEND_URL=http://localhost:3000   # CORS origin + OAuth redirect target
 PORT=3010
 NODE_ENV=development           # 'production' adds the `secure` flag to the lx_session cookie
-VAPID_PUBLIC_KEY=...           # Web Push for phrase reminders; generate with `npx web-push generate-vapid-keys`
+VAPID_PUBLIC_KEY=...           # Web Push for phrase / word reminders; generate with `npx web-push generate-vapid-keys`
 VAPID_PRIVATE_KEY=...          # any VAPID_* blank → push disabled (GET /push/public-key → 503, cron idle)
 VAPID_SUBJECT=mailto:...       # contact the push services can reach; must be mailto: or https:
 ```
@@ -95,16 +95,19 @@ src/
 │       ├── phrase-card.entity.ts
 │       └── phrase-sentence.entity.ts
 │
-├── push/                      # phrase reminders via Web Push (6 a day, 08:00–22:00 user time)
+├── push/                      # phrase + word reminders via Web Push (6 a day each, 08:00–22:00 user time)
 │   ├── push.controller.ts     # GET /push/public-key, POST|DELETE /push/subscriptions
-│   ├── push.service.ts        # VAPID setup, subscription upsert/delete, sendToUser (drops 404/410 endpoints)
-│   ├── phrase-reminders.service.ts  # @Cron every minute: sends due reminders, schedules the next
-│   ├── reminder-schedule.ts   # nextReminderAt() — slot math in the user's IANA time zone (pure, tested)
+│   ├── push.service.ts        # VAPID setup, subscription upsert/delete + per-device topics, starts/stops schedules, sendToUser (drops 404/410 endpoints)
+│   ├── reminders-cron.ts      # RemindersCron — shared send-and-reschedule logic; subclasses only `pick` what to send
+│   ├── phrase-reminders.service.ts  # @Cron every minute: random phrase
+│   ├── word-reminders.service.ts    # @Cron every minute: random word, learning ones first
+│   ├── reminder-schedule.ts   # nextReminderAt() — slot math in the user's IANA time zone (pure, tested); ReminderTopic, ReminderSchedule
 │   ├── push.module.ts
 │   ├── dto/                   # SubscribePushDto, UnsubscribePushDto
 │   └── entities/
 │       ├── push-subscription.entity.ts
-│       └── phrase-reminder.entity.ts
+│       ├── phrase-reminder.entity.ts
+│       └── word-reminder.entity.ts
 │
 └── practice/                  # spaced-repetition practice sessions
     ├── practice.controller.ts    # all /practice/* routes
@@ -198,19 +201,21 @@ Phrases are completely separate from `vocab_cards`: no `word_progress`, no maste
 | userId | uuid FK→users | CASCADE delete |
 | endpoint | text | unique; push service URL of one browser/device |
 | p256dh / auth | varchar | subscription keys from `PushSubscription.toJSON()` |
+| phrases | boolean | default `true`; this device gets phrase reminders |
+| words | boolean | default `false`; this device gets word reminders |
 | createdAt | timestamp | auto |
 
-Subscribing an endpoint that belongs to another user re-assigns it (shared device, new login).
+Subscribing an endpoint that belongs to another user re-assigns it (shared device, new login) and resets its flags to what the request asks for.
 
-### `phrase_reminders`
+### `phrase_reminders` / `word_reminders`
 | column | type | notes |
 |---|---|---|
-| userId | uuid PK, FK→users | CASCADE delete; one schedule per user, shared by all their devices |
+| userId | uuid PK, FK→users | CASCADE delete; one schedule per user and topic, shared by their devices with that topic on |
 | timezone | varchar | IANA zone of the device that subscribed last |
 | nextAt | timestamptz | indexed; when the cron sends the next reminder |
-| recentPhraseIds | simple-json (`string[]`) | last 5 sent phrases, skipped when picking the next |
+| recentPhraseIds / recentWordIds | simple-json (`string[]`) | last 5 sent phrases / words, skipped when picking the next. Entity property is `recentIds` in both (`ReminderSchedule`) |
 
-Created by the first subscription, deleted when the user's last subscription goes away.
+A schedule is created when a device turns its topic on and deleted when no device of the user has the topic on any more.
 
 ### `word_progress`
 | column | type | notes |
@@ -286,8 +291,8 @@ A phrase response is `{id, userId, phrase, explanation, addedAt, updatedAt, exam
 | method | path | body | description |
 |---|---|---|---|
 | GET | /push/public-key | — | `{publicKey}` (VAPID, base64url) for `pushManager.subscribe`; 503 if VAPID_* is not set |
-| POST | /push/subscriptions | `{endpoint, p256dh, auth, timezone}` | upsert this device; starts the reminder schedule if the user has none (or reschedules on a new time zone). 400 `Unsupported push service` unless the endpoint is https on FCM / Mozilla / WNS / Apple push hosts (the server POSTs to it); 400 `Invalid timezone`. Returns `{ok: true}` |
-| DELETE | /push/subscriptions | `{endpoint}` | remove this device; the schedule goes with the last one. Returns `{ok: true}` |
+| POST | /push/subscriptions | `{endpoint, p256dh, auth, timezone, phrases?, words?}` | upsert this device and switch the given reminders on/off (left out → unchanged; a new device with neither flag gets phrases only, as older app versions expect). Starts the user's schedule for each topic the device has on (or reschedules on a new time zone), drops the ones no device uses. 400 `Unsupported push service` unless the endpoint is https on FCM / Mozilla / WNS / Apple push hosts (the server POSTs to it); 400 `Invalid timezone`. Returns `{ok: true, phrases, words}` — this device's flags |
+| DELETE | /push/subscriptions | `{endpoint}` | remove this device (both topics); a schedule goes when no device of the user has its topic on. Returns `{ok: true}` |
 
 ### Practice (`/practice`) — all require JWT
 
@@ -327,12 +332,17 @@ All `*/score` routes return the updated `word_progress` row. All `wordId`/`wordI
 
 After either decay: mastery re-synced to `vocab_cards`.
 
-## Phrase reminders cron (runs every minute)
+## Reminders cron (runs every minute, phrases and words separately)
 
-- The 08:00–22:00 window in the user's time zone is split into 6 equal slots of 2h20 (08:00–10:20, 10:20–12:40, 12:40–15:00, 15:00–17:20, 17:20–19:40, 19:40–22:00); each slot gets one reminder at a random moment. A new schedule skips the slot in progress.
-- Due reminder (`nextAt <= now`): pick a random phrase of the user (not one of `recentPhraseIds` if possible), send to all their subscriptions, then `nextAt` = random moment in the next slot after the old `nextAt`.
-- Payload (quiz, meaning stays in the app): `{title: phrase, body: 'Remember what it means? Tap to check.', url: '/phrases?open=<id>', tag: 'phrase-reminder'}`, TTL 30 min.
-- More than 10 min overdue (API was down) → not sent, rescheduled from now. No phrases → nothing sent, schedule kept. No subscriptions left → schedule deleted.
+Two topics with independent schedules: `PhraseRemindersService` and `WordRemindersService`, both on top of `RemindersCron`.
+
+- The 08:00–22:00 window in the user's time zone is split into 6 equal slots of 2h20 (08:00–10:20, 10:20–12:40, 12:40–15:00, 15:00–17:20, 17:20–19:40, 19:40–22:00); each slot gets one reminder at a random moment. A new schedule skips the slot in progress. With both topics on, a user gets 12 a day.
+- Due reminder (`nextAt <= now`): pick an item (not one of `recentIds` if possible), send it to the user's devices with that topic on, then `nextAt` = random moment in the next slot after the old `nextAt`.
+- Phrases: a random phrase. Words: a random `learning` word; a `mastered` one only when every learning word was sent recently; a recent one only when nothing else is left.
+- Payloads (quiz, meaning stays in the app), TTL 30 min, body `'Remember what it means? Tap to check.'` for both:
+  - `{title: phrase, url: '/phrases?open=<id>', tag: 'phrase-reminder'}`
+  - `{title: word, url: '/vocabulary?open=<id>', tag: 'word-reminder'}`
+- More than 10 min overdue (API was down) → not sent, rescheduled from now. No phrases / words → nothing sent, schedule kept. No device with the topic on → schedule deleted.
 
 ## Auth pattern
 

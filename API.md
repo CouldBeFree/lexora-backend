@@ -755,7 +755,7 @@ Generate **1 new example** with AI and save it. Existing examples are sent to AI
 
 ## Push
 
-Phrase reminders via Web Push: 6 a day at random moments between 08:00 and 22:00 in the user's time zone, one in each sixth of that window. A reminder is a quiz — it shows only the phrase; tapping it opens `/phrases?open=<id>` in the app. The schedule is per user and every subscribed device of the user gets the same reminders. See *Phrase reminders cron* in `CLAUDE.md` for the scheduling rules.
+Phrase and word reminders via Web Push: for each topic, 6 a day at random moments between 08:00 and 22:00 in the user's time zone, one in each sixth of that window. A reminder is a quiz — it shows only the phrase or word; tapping it opens `/phrases?open=<id>` or `/vocabulary?open=<id>` in the app. Word reminders pick words still being learned first. Each device turns the topics on or off for itself (`phrases` / `words` on `POST /push/subscriptions`); the schedule of a topic is per user, and every device of the user with that topic on gets the same reminders. See *Reminders cron* in `CLAUDE.md` for the scheduling rules.
 
 If any `VAPID_*` variable is unset, push is disabled: `GET /push/public-key` responds `503` and the cron sends nothing.
 
@@ -769,6 +769,8 @@ If any `VAPID_*` variable is unset, push is disabled: `GET /push/public-key` res
   "tag": "phrase-reminder"
 }
 ```
+
+Word reminders have the same shape with `"url": "/vocabulary?open=<id>"` and `"tag": "word-reminder"`.
 
 ---
 
@@ -793,7 +795,7 @@ VAPID public key to pass to `pushManager.subscribe({ applicationServerKey })` (b
 
 ### `POST /push/subscriptions` 🔒
 
-Save this browser's push subscription and start reminders. Idempotent: the same `endpoint` is updated in place (and moved to the current user if another account used it). Creates the user's schedule if there is none; a different `timezone` than stored reschedules it.
+Save this browser's push subscription and switch its reminders on or off. Idempotent: the same `endpoint` is updated in place (and moved to the current user if another account used it — its flags then start from this request). `phrases` / `words` left out keep their current value; a new device that sends neither gets phrase reminders only (what app versions before word reminders expect). For each topic the device has on, creates the user's schedule if there is none, and a different `timezone` than stored reschedules it; a topic no device of the user has on any more loses its schedule.
 
 **Request body** — `PushSubscription.toJSON()` flattened, plus the device's IANA time zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`):
 
@@ -802,21 +804,24 @@ Save this browser's push subscription and start reminders. Idempotent: the same 
   "endpoint": "https://fcm.googleapis.com/fcm/send/…",
   "p256dh": "BNc…",
   "auth": "tBH…",
-  "timezone": "Europe/Kyiv"
+  "timezone": "Europe/Kyiv",
+  "words": true
 }
 ```
 
-**Response `201`**
+`phrases` and `words` are optional booleans.
+
+**Response `201`** — which reminders this device gets now
 
 ```json
-{ "ok": true }
+{ "ok": true, "phrases": true, "words": true }
 ```
 
 **Errors**
 
 | Status | Condition |
 |--------|-----------|
-| `400` | A field is missing or empty |
+| `400` | A field is missing or empty, or `phrases` / `words` is not a boolean |
 | `400` | `"Unsupported push service"` — `endpoint` is not https on `fcm.googleapis.com`, `*.push.services.mozilla.com`, `*.notify.windows.com` or `*.push.apple.com` |
 | `400` | `"Invalid timezone"` — not an IANA zone |
 | `401` | Not authenticated |
@@ -825,7 +830,7 @@ Save this browser's push subscription and start reminders. Idempotent: the same 
 
 ### `DELETE /push/subscriptions` 🔒
 
-Remove this browser's subscription. When it was the user's last one, the reminder schedule is deleted too. Removing an unknown endpoint is not an error.
+Remove this browser's subscription (phrase and word reminders both stop on it). A topic's schedule is deleted when no other device of the user has it on. Removing an unknown endpoint is not an error.
 
 **Request body**
 
@@ -942,5 +947,5 @@ Stored in the `phrase_sentences` table; deleted together with the phrase.
 | `GET` | `/phrases/:id/sentences` | 🔒 | `200` | List examples |
 | `POST` | `/phrases/:id/sentences` | 🔒 | `201` | Generate 1 more example |
 | `GET` | `/push/public-key` | 🔒 | `200` | VAPID public key for subscribing |
-| `POST` | `/push/subscriptions` | 🔒 | `201` | Save this device; start phrase reminders |
-| `DELETE` | `/push/subscriptions` | 🔒 | `200` | Remove this device; stop reminders with the last one |
+| `POST` | `/push/subscriptions` | 🔒 | `201` | Save this device; switch phrase / word reminders on or off |
+| `DELETE` | `/push/subscriptions` | 🔒 | `200` | Remove this device; a topic stops with its last device |

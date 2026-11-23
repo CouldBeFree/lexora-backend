@@ -6,12 +6,19 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { sendNotification, setVapidDetails, WebPushError } from 'web-push';
 import { PushSubscriptionEntity } from './entities/push-subscription.entity';
 import { PhraseReminder } from './entities/phrase-reminder.entity';
+import { WordReminder } from './entities/word-reminder.entity';
 import { SubscribePushDto } from './dto/push-subscription.dto';
-import { isValidTimeZone, nextReminderAt } from './reminder-schedule';
+import {
+  isValidTimeZone,
+  nextReminderAt,
+  REMINDER_TOPICS,
+  ReminderSchedule,
+  ReminderTopic,
+} from './reminder-schedule';
 
 export interface PushPayload {
   title: string;
@@ -19,6 +26,9 @@ export interface PushPayload {
   url: string; // opened when the notification is tapped
   tag?: string;
 }
+
+// Which reminders a device gets
+export type ReminderTopics = Record<ReminderTopic, boolean>;
 
 // The server POSTs to subscription endpoints, so only browser push services are accepted
 const PUSH_HOSTS = [
@@ -55,7 +65,9 @@ export class PushService {
     @InjectRepository(PushSubscriptionEntity)
     private readonly subscriptions: Repository<PushSubscriptionEntity>,
     @InjectRepository(PhraseReminder)
-    private readonly reminders: Repository<PhraseReminder>,
+    private readonly phraseReminders: Repository<PhraseReminder>,
+    @InjectRepository(WordReminder)
+    private readonly wordReminders: Repository<WordReminder>,
   ) {
     const publicKey = config.get<string>('VAPID_PUBLIC_KEY');
     const privateKey = config.get<string>('VAPID_PRIVATE_KEY');
@@ -81,9 +93,13 @@ export class PushService {
     return this.publicKey;
   }
 
-  // Saves the device (re-assigning it if another account used it) and
-  // starts the user's reminder schedule if there is none yet
-  async subscribe(userId: string, dto: SubscribePushDto): Promise<void> {
+  // Saves the device (re-assigning it if another account used it), switches the
+  // reminders in `dto` on or off and starts / stops the user's schedules to match.
+  // Returns which reminders this device gets now.
+  async subscribe(
+    userId: string,
+    dto: SubscribePushDto,
+  ): Promise<ReminderTopics> {
     if (!isPushServiceUrl(dto.endpoint)) {
       throw new BadRequestException('Unsupported push service');
     }
@@ -97,45 +113,52 @@ export class PushService {
     const subscription =
       existing ?? this.subscriptions.create({ endpoint: dto.endpoint });
     const previousOwner = existing?.userId;
+    if (previousOwner === userId) {
+      // Reminders left out of the request stay as they are
+      subscription.phrases = dto.phrases ?? subscription.phrases;
+      subscription.words = dto.words ?? subscription.words;
+    } else {
+      // A new device (or a new account on it) gets only what it asks for. A request
+      // without either flag comes from an app version that knew phrase reminders only
+      subscription.phrases = dto.phrases ?? dto.words === undefined;
+      subscription.words = dto.words ?? false;
+    }
     Object.assign(subscription, { userId, p256dh: dto.p256dh, auth: dto.auth });
     await this.subscriptions.save(subscription);
     if (previousOwner && previousOwner !== userId) {
-      await this.removeReminderIfUnused(previousOwner);
+      await this.removeUnusedSchedules(previousOwner);
     }
 
-    const reminder = await this.reminders.findOne({ where: { userId } });
-    if (!reminder) {
-      await this.reminders.save(
-        this.reminders.create({
-          userId,
-          timezone: dto.timezone,
-          nextAt: nextReminderAt(new Date(), dto.timezone),
-          recentPhraseIds: [],
-        }),
-      );
-    } else if (reminder.timezone !== dto.timezone) {
-      await this.reminders.update(
-        { userId },
-        {
-          timezone: dto.timezone,
-          nextAt: nextReminderAt(new Date(), dto.timezone),
-        },
-      );
+    for (const topic of REMINDER_TOPICS) {
+      if (subscription[topic]) {
+        await this.startSchedule(userId, topic, dto.timezone);
+      } else {
+        await this.removeScheduleIfUnused(userId, topic);
+      }
     }
+    return { phrases: subscription.phrases, words: subscription.words };
   }
 
   async unsubscribe(userId: string, endpoint: string): Promise<void> {
     await this.subscriptions.delete({ userId, endpoint });
-    await this.removeReminderIfUnused(userId);
+    await this.removeUnusedSchedules(userId);
   }
 
-  hasSubscriptions(userId: string): Promise<boolean> {
-    return this.subscriptions.exists({ where: { userId } });
+  // Whether any device of the user has `topic` reminders on
+  hasSubscriptions(userId: string, topic: ReminderTopic): Promise<boolean> {
+    return this.subscriptions.exists({ where: withTopic(userId, topic) });
   }
 
-  // Sends to every device of the user; drops subscriptions the push service has expired
-  async sendToUser(userId: string, payload: PushPayload): Promise<void> {
-    const devices = await this.subscriptions.find({ where: { userId } });
+  // Sends to the user's devices that have `topic` reminders on; drops subscriptions
+  // the push service has expired
+  async sendToUser(
+    userId: string,
+    topic: ReminderTopic,
+    payload: PushPayload,
+  ): Promise<void> {
+    const devices = await this.subscriptions.find({
+      where: withTopic(userId, topic),
+    });
     const body = JSON.stringify(payload);
 
     await Promise.all(
@@ -165,9 +188,57 @@ export class PushService {
     );
   }
 
-  private async removeReminderIfUnused(userId: string): Promise<void> {
-    if (!(await this.hasSubscriptions(userId))) {
-      await this.reminders.delete({ userId });
+  private schedules(topic: ReminderTopic): Repository<ReminderSchedule> {
+    return topic === 'phrases' ? this.phraseReminders : this.wordReminders;
+  }
+
+  // Creates the user's `topic` schedule if there is none, or moves it to a new time zone
+  private async startSchedule(
+    userId: string,
+    topic: ReminderTopic,
+    timezone: string,
+  ): Promise<void> {
+    const schedules = this.schedules(topic);
+    const schedule = await schedules.findOne({ where: { userId } });
+    if (!schedule) {
+      await schedules.save(
+        schedules.create({
+          userId,
+          timezone,
+          nextAt: nextReminderAt(new Date(), timezone),
+          recentIds: [],
+        }),
+      );
+    } else if (schedule.timezone !== timezone) {
+      await schedules.update(
+        { userId },
+        { timezone, nextAt: nextReminderAt(new Date(), timezone) },
+      );
     }
   }
+
+  private async removeScheduleIfUnused(
+    userId: string,
+    topic: ReminderTopic,
+  ): Promise<void> {
+    if (!(await this.hasSubscriptions(userId, topic))) {
+      await this.schedules(topic).delete({ userId });
+    }
+  }
+
+  private async removeUnusedSchedules(userId: string): Promise<void> {
+    for (const topic of REMINDER_TOPICS) {
+      await this.removeScheduleIfUnused(userId, topic);
+    }
+  }
+}
+
+// The user's devices that have `topic` reminders on
+function withTopic(
+  userId: string,
+  topic: ReminderTopic,
+): FindOptionsWhere<PushSubscriptionEntity> {
+  return topic === 'phrases'
+    ? { userId, phrases: true }
+    : { userId, words: true };
 }

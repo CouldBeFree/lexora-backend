@@ -7,10 +7,11 @@ import {
   PrimaryColumn,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
+import type { ReminderSchedule } from '../reminder-schedule';
 
-// Reminder schedule of a user; exists while they have at least one push subscription
+// Phrase reminder schedule of a user; exists while one of their devices has phrase reminders on
 @Entity('phrase_reminders')
-export class PhraseReminder {
+export class PhraseReminder implements ReminderSchedule {
   @PrimaryColumn('uuid')
   userId: string;
 
@@ -18,7 +19,6 @@ export class PhraseReminder {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  // IANA zone of the device that subscribed last, e.g. 'Europe/Kyiv'
   @Column()
   timezone: string;
 
@@ -26,7 +26,7 @@ export class PhraseReminder {
   @Column({ type: 'timestamptz' })
   nextAt: Date;
 
-  // Last sent phrases, skipped when picking the next one
-  @Column({ type: 'simple-json', default: [] })
-  recentPhraseIds: string[];
+  // The column keeps its original name, so existing schedules carry over
+  @Column({ name: 'recentPhraseIds', type: 'simple-json', default: [] })
+  recentIds: string[];
 }

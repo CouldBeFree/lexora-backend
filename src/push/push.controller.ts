@@ -26,12 +26,13 @@ export class PushController {
     return { publicKey: this.pushService.getPublicKey() };
   }
 
-  // POST /push/subscriptions — saves this device and starts phrase reminders
+  // POST /push/subscriptions — saves this device, switches phrase / word reminders
+  // on or off; returns which reminders the device gets
   @Post('subscriptions')
   async subscribe(@Req() req: Request, @Body() dto: SubscribePushDto) {
     const { id } = req.user as { id: string };
-    await this.pushService.subscribe(id, dto);
-    return { ok: true };
+    const topics = await this.pushService.subscribe(id, dto);
+    return { ok: true, ...topics };
   }
 
   // DELETE /push/subscriptions — removes this device; reminders stop with the last one

@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 // PushSubscription.toJSON() flattened, plus the device's IANA time zone
 export class SubscribePushDto {
@@ -17,6 +17,15 @@ export class SubscribePushDto {
   @IsString()
   @IsNotEmpty()
   timezone: string;
+
+  // Reminders to switch on (true) or off (false) on this device; left out → unchanged
+  @IsOptional()
+  @IsBoolean()
+  phrases?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  words?: boolean;
 }
 
 export class UnsubscribePushDto {
